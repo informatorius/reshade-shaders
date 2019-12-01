@@ -10,29 +10,30 @@
 // Comment the next line to disable interpolation in linear gamma (and gain speed).
 //#define LINEAR_PROCESSING
 
-uniform float Resolution <
-	ui_type = "drag";
+#include "ReShadeUI.fxh"
+
+uniform float Amount < __UNIFORM_SLIDER_FLOAT1
+	ui_min = 0.0; ui_max = 1.0;
+	ui_tooltip = "Amount of CRT effect you want";
+> = 1.00;
+uniform float Resolution < __UNIFORM_SLIDER_FLOAT1
 	ui_min = 1.0; ui_max = 8.0;
 	ui_tooltip = "Input size coefficient (low values gives the 'low - res retro look').";
 > = 1.15;
-uniform float Gamma <
-	ui_type = "drag";
+uniform float Gamma < __UNIFORM_SLIDER_FLOAT1
 	ui_min = 0.0; ui_max = 4.0;
 	ui_tooltip = "Gamma of simulated CRT";
 > = 2.4;
-uniform float MonitorGamma <
-	ui_type = "drag";
+uniform float MonitorGamma < __UNIFORM_SLIDER_FLOAT1
 	ui_min = 0.0; ui_max = 4.0;
 	ui_tooltip = "Gamma of display monitor";
 > = 2.2;
-uniform float Brightness <
-	ui_type = "drag";
+uniform float Brightness < __UNIFORM_SLIDER_FLOAT1
 	ui_min = 0.0; ui_max = 3.0;
 	ui_tooltip = "Used to boost brightness a little.";
 > = 0.9;
 
-uniform int ScanlineIntensity <
-	ui_type = "drag";
+uniform int ScanlineIntensity < __UNIFORM_SLIDER_INT1
 	ui_min = 2; ui_max = 4;
 	ui_label = "Scanline Intensity";
 > = 2;
@@ -44,31 +45,26 @@ uniform bool ScanlineGaussian <
 uniform bool Curvature <
 	ui_tooltip = "Barrel effect";
 > = false;
-uniform float CurvatureRadius <
-	ui_type = "drag";
+uniform float CurvatureRadius < __UNIFORM_SLIDER_FLOAT1
 	ui_min = 0.0; ui_max = 2.0;
 	ui_label = "Curvature Radius";
 > = 1.5;
-uniform float CornerSize <
-	ui_type = "drag";
+uniform float CornerSize < __UNIFORM_SLIDER_FLOAT1
 	ui_min = 0.00; ui_max = 0.02; ui_step = 0.001;
 	ui_label = "Corner Size";
 	ui_tooltip = "Higher values => more rounded corner";
 > = 0.0100;
-uniform float ViewerDistance <
-	ui_type = "drag";
+uniform float ViewerDistance < __UNIFORM_SLIDER_FLOAT1
 	ui_min = 0.0; ui_max = 4.0;
 	ui_Label = "Viewer Distance";
 	ui_tooltip = "Simulated distance from viewer to monitor";
 > = 2.00;
-uniform float2 Angle <
-	ui_type = "drag";
+uniform float2 Angle < __UNIFORM_SLIDER_FLOAT2
 	ui_min = -0.2; ui_max = 0.2;
 	ui_tooltip = "Tilt angle in radians";
 > = 0.00;
 
-uniform float Overscan <
-	ui_type = "drag";
+uniform float Overscan < __UNIFORM_SLIDER_FLOAT1
 	ui_min = 1.0; ui_max = 1.10; ui_step = 0.01;
 	ui_tooltip = "Overscan (e.g. 1.02 for 2% overscan).";
 > = 1.01;
@@ -224,18 +220,18 @@ float3 AdvancedCRTPass(float4 position : SV_Position, float2 tex : TEXCOORD0) : 
 	float2 rubyInputSize = Resolution;
 	float2 rubyOutputSize = ReShade::ScreenSize;
 
-	float2 xy = Curvature ? transform(tex, rubyTextureSize, rubyInputSize) : tex;
-	float cval = corner(xy, rubyTextureSize, rubyInputSize);
+	float2 orig_xy = Curvature ? transform(tex, rubyTextureSize, rubyInputSize) : tex;
+	float cval = corner(orig_xy, rubyTextureSize, rubyInputSize);
 
 	// Of all the pixels that are mapped onto the texel we are
 	// currently rendering, which pixel are we currently rendering?
-	float2 ratio_scale = xy * rubyTextureSize - 0.5;
+	float2 ratio_scale = orig_xy * rubyTextureSize - 0.5;
 
 	float filter = fwidth(ratio_scale.y);
 	float2 uv_ratio = frac(ratio_scale);
 
 	// Snap to the center of the underlying texel.
-	xy = (floor(ratio_scale) + 0.5) / rubyTextureSize;
+	float2 xy = (floor(ratio_scale) + 0.5) / rubyTextureSize;
 
 	// Calculate Lanczos scaling coefficients describing the effect
 	// of various neighbour texels in a scanline on the current
@@ -300,7 +296,10 @@ float3 AdvancedCRTPass(float4 position : SV_Position, float2 tex : TEXCOORD0) : 
 	// Convert the image gamma for display on our output device.
 	mul_res = pow(abs(mul_res), 1.0 / MonitorGamma);
 
-	return mul_res;
+	float3 color = TEX2D(orig_xy).rgb * cval.xxx;
+	color = lerp(color, mul_res, Amount);
+
+	return saturate(color);
 }
 
 technique AdvancedCRT

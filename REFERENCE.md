@@ -17,18 +17,20 @@ ReShade FX shading language
 
 ### Macros
 
+* ``__FILE__`` Current file name
+* ``__LINE__`` Current line number
 * ``__RESHADE__`` Version of the injector
 * ``__VENDOR__`` Vendor id
 * ``__DEVICE__`` Device id
 * ``__RENDERER__`` Renderer version
 * ``__APPLICATION__`` Hash of the application executable name
-* ``__DATE_YEAR__`` Current year
-* ``__DATE_MONTH__`` Current month
-* ``__DATE_DAY__`` Current day in month
 * ``BUFFER_WIDTH`` Backbuffer width
 * ``BUFFER_HEIGHT`` Backbuffer height
 * ``BUFFER_RCP_WIDTH`` Reciprocal backbuffer width
 * ``BUFFER_RCP_HEIGHT`` Reciprocal backbuffer height
+* ``BUFFER_COLOR_DEPTH`` Bit depth of the backbuffer (e.g. 8 or 10)
+
+Possible values for ``__RENDERER__`` are 0x9000 for D3D9, 0xa000 or higher for D3D10, 0xb000 or higher for D3D11, 0xc000 or higher for D3D12, 0x10000 or higher for OpenGL and 0x20000 or higher for Vulkan.
 
 ### Textures
 
@@ -49,8 +51,8 @@ Semantics on textures are used to request special textures:
 Declared textures are created at runtime with the parameters specified in their definition body.
 
 ```c++
-texture texColorBuffer : COLOR; // or SV_Target
-texture texDepthBuffer : DEPTH; // or SV_Depth
+texture texColorBuffer : COLOR;
+texture texDepthBuffer : DEPTH;
 
 texture texTarget
 {
@@ -66,9 +68,7 @@ texture texTarget
 	//   R8, R16F, R32F
 	//   RG8, RG16, RG16F, RG32F
 	//   RGBA8, RGBA16, RGBA16F, RGBA32F
-	// Available compressed formats (read-only):
-	//   DXT1 or BC1, DXT3 or BC2, DXT5 or BC3
-	//   LATC1 or BC4, LATC2 or BC5
+	//   RGB10A2
 	Format = RGBA8;
 
 	// The default value is used if an option is missing here.
@@ -127,12 +127,16 @@ sampler samplerTarget
 
 Annotations to customize UI appearance:
 
- * ui_type - Can be `input`, `drag`, `combo` or `color`
- * ui_min - The smallest value allowed in this variable (required when `ui_type = "drag"`)
- * ui_max - The largest value allowed in this variable (required when `ui_type = "drag"`)
- * ui_items - A list of items for the combo box, each item is terminated with a `\0` character (required when `ui_type = "combo"`)
+ * ui_type - Can be `input`, `drag`, `slider`, `combo`, `radio` or `color`
+ * ui_min - The smallest value allowed in this variable (required when `ui_type = "drag"` or `ui_type = "slider"`)
+ * ui_max - The largest value allowed in this variable (required when `ui_type = "drag"` or `ui_type = "slider"`)
+ * ui_step - The value added/subtracted when clicking the button next to the slider
+ * ui_items - A list of items for the combo box or radio buttons, each item is terminated with a `\0` character (required when `ui_type = "combo"` or `ui_type = "radio"`)
  * ui_label - Display name of the variable in the UI. If this is missing, the variable name is used instead.
  * ui_tooltip - Text that is displayed when the user hovers over the variable in the UI. Use this for a description.
+ * ui_category - Groups values together under a common headline. Note that all variables in the same category also have to be declared next to each other for this to be displayed correctly.
+ * ui_category_closed - Set to true to show a category closed by default.
+ * ui_spacing - Adds space before the UI widget (multiplied by the value of the annotation).
 
 Annotations are also used to request special runtime values:
 
@@ -152,8 +156,10 @@ Annotations are also used to request special runtime values:
  True if specified keycode (in this case the spacebar) is pressed and false otherwise.
  If mode is set to "press" the value is true only in the frame the key was initially held down.
  If mode is set to "toggle" the value stays true until the key is pressed a second time.
- * ``uniform bool buttondown < source = "mousebutton"; keycode = 0; toggle = false; >;``  
- True if specified mouse button (0 - 4) is pressed and false otherwise. If toggle is true the value stays true until the key is pressed a second time.
+ * ``uniform bool buttondown < source = "mousebutton"; keycode = 0; mode = ""; >;``  
+ True if specified mouse button (0 - 4) is pressed and false otherwise.
+ If mode is set to "press" the value is true only in the frame the key was initially held down.
+ If mode is set to "toggle" the value stays true until the key is pressed a second time.
  * ``uniform float2 mousepoint < source = "mousepoint"; >;``  
  Gets the position of the mouse cursor in screen coordinates.
  * ``uniform float2 mousedelta < source = "mousedelta"; >;``  
@@ -211,12 +217,16 @@ Parameter Qualifiers:
 
 Intrinsics:
 
-> abs, acos, all, any, asfloat, asin, asint, asuint, atan, atan2, ceil, clamp, cos, cosh, cross, ddx, ddy, degrees, determinant, distance, dot, exp, exp2, faceforward, floor, frac, frexp, fwidth, ldexp, length, lerp, log, log10, log2, mad, max, min, modf, mul, normalize, pow, radians, rcp, reflect, refract, round, rsqrt, saturate, sign, sin, sincos, sinh, smoothstep, sqrt, step, tan, tanh, tex2D, tex2Dgrad, tex2Dlod, tex2Dproj, transpose, trunc
+> abs, acos, all, any, asfloat, asin, asint, asuint, atan, atan2, ceil, clamp, cos, cosh, cross, ddx, ddy, degrees, determinant, distance, dot, exp, exp2, faceforward, floor, frac, frexp, fwidth, isinf, isnan, ldexp, length, lerp, log, log10, log2, mad, max, min, modf, mul, normalize, pow, radians, rcp, reflect, refract, round, rsqrt, saturate, sign, sin, sincos, sinh, smoothstep, sqrt, step, tan, tanh, tex2D, tex2Dgrad, tex2Dlod, tex2Dproj, transpose, trunc
 
 In addition to these standard intrinsics, ReShade FX comes with a few additional ones:
 
  * ``float4 tex2Dfetch(sampler2D s, int4 coords)``  
- Fetches a value from the texture directly without any sampling.
+ Fetches a value from the texture directly without any sampling.\
+   coords.x : [0, texture width)\
+   coords.y : [0, texture height)\
+   coords.z : ignored\
+   coords.w : [0, texture mip levels)
  * ``float4 tex2Dgather(sampler2D s, float2 coords, int comp)``  
  Gathers the specified component of the four neighboring pixels and returns the result.
  * ``float4 tex2Dgatheroffset(sampler2D s, float2 coords, int2 offset, int comp)``
@@ -297,25 +307,30 @@ float4 ExamplePS1(float4 pos : SV_Position, float2 texcoord : TEXCOORD0) : SV_Ta
 
 Annotations:
 
- * ``technique tech1 < enabled = true; > { ... }``  
+ * ``technique tech1 < enabled = true; >``  
  Enable (or disable if false) this technique by default.
- * ``technique tech2 < timeout = 1000; > { ... }``  
+ * ``technique tech2 < timeout = 1000; >``  
  Auto-toggle this technique off 1000 milliseconds after it was enabled.
- * ``technique tech3 < toggle = 0x20; > { ... }``  
+ * ``technique tech3 < toggle = 0x20; togglectrl = false; toggleshift = false; togglealt = false; >``  
  Toggle this technique when the specified key is pressed.
- * ``technique tech3 < toggleTime = 100; > { ... }``  
- Toggle this technique at the specified time (seconds after midnight).
+ * ``technique tech4 < hidden = true; >``  
+ Hide this technique in the UI.
+ * ``technique tech5 < ui_tooltip = "My Effect description"; >``  
+ Shows the specified text when the user hovers the technique in the UI.
 
 ```c++
-technique Example < enabled = true; >
+technique Example
 {
 	pass p0
-	{	
+	{
+		// The number of vertices ReShade generates for the draw call.
+		VertexCount = 3;
+
 		// The following two accept function names declared above which are used as entry points for the shader.
 		// Please note that all parameters must have an associated semantic so the runtime can match them between shader stages.
 		VertexShader = ExampleVS;
 		PixelShader = ExamplePS0;
-		
+	
 		// RenderTarget0 to RenderTarget7 allow to set one or more render targets for rendering to textures.
 		// Set them to a texture name declared above in order to write the color output (SV_Target0 to RenderTarget0, SV_Target1 to RenderTarget1, ...) to this texture in this pass.
 		// If multiple render targets are used, the dimensions of them has to match each other.
@@ -325,7 +340,7 @@ technique Example < enabled = true; >
 		RenderTarget = texTarget;
 
 		// Clears all bound render targets to zero before rendering when set to true.
-		ClearRenderTargets = true;
+		ClearRenderTargets = false;
 		
 		// A mask applied to the color output before it is written to the render target.
 		RenderTargetWriteMask = 0xF; // or ColorWriteEnable
